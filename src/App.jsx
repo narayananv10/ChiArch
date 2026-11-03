@@ -21,29 +21,31 @@ function App() {
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [narrative, setNarrative] = useState('');
 
-  // Geocode location using Mapbox (with fallback to Nominatim)
+  // Geocode location using server-side function (with fallback to Nominatim)
   const geocodeLocation = async (address) => {
     try {
-      // Try Mapbox first
-      const mapboxKey = import.meta.env.VITE_MAPBOX_KEY;
-      if (mapboxKey) {
-        const response = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address)}.json?access_token=${mapboxKey}`
-        );
+      // Try server-side geocode first
+      const response = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ q: address })
+      });
+
+      if (response.ok) {
         const data = await response.json();
-        if (data.features && data.features.length > 0) {
-          return {
-            lat: data.features[0].center[1],
-            lng: data.features[0].center[0]
-          };
-        }
+        return {
+          lat: data.lat,
+          lng: data.lng
+        };
       }
 
       // Fallback to Nominatim
-      const response = await fetch(
+      const response2 = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`
       );
-      const data = await response.json();
+      const data = await response2.json();
       if (data && data.length > 0) {
         return {
           lat: parseFloat(data[0].lat),
@@ -93,18 +95,18 @@ function App() {
   const getNarrative = async (building) => {
     try {
       setLoading(true);
-      const response = await fetch('/.netlify/functions/getNarrative', {
+      const response = await fetch('/api/getNarrative', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: building.name,
-          address: building.address,
+          name: building.name || building.landmarkna,
+          address: building.address || `${building.bldg_f_add} ${building.bldg_st_name}`,
           year: building.date_built || building.decade,
           architect: building.architect || 'Unknown',
           landmarkDate: building.landmark || building.valid_date,
-          style: 'Chicago School' // Placeholder - would match from style mapping
+          style: null // Will be inferred from style mapping
         })
       });
 

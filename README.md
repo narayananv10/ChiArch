@@ -23,14 +23,13 @@ npm install
 ### 2. Get API keys (optional)
 
 - **Mapbox Geocoding**: Get a free API key from [Mapbox](https://www.mapbox.com/) (100,000 requests/month free)
-- **LLM API**: Get a free API key from [Google Gemini](https://ai.google.dev/) or [OpenRouter](https://openrouter.ai/)
+- **OpenRouter API**: Get a free API key from [OpenRouter](https://openrouter.ai/) (uses Google Gemini models)
 
 Create a `.env` file in the project root:
 
 ```bash
-VITE_MAPBOX_KEY=your_mapbox_key_here
-VITE_LLM_API_KEY=your_llm_api_key_here
-VITE_LLM_ENDPOINT=https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent
+MAPBOX_TOKEN=your_mapbox_key_here
+OPENROUTER_API_KEY=your_openrouter_key_here
 ```
 
 ### 3. Run the app
@@ -39,7 +38,7 @@ VITE_LLM_ENDPOINT=https://generativelanguage.googleapis.com/v1beta/models/gemini
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+Open [http://localhost:5173](http://localhost:5173)
 
 ## Deployment
 
@@ -49,52 +48,16 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 2. Set build command: `npm run build`
 3. Set publish directory: `dist`
 4. Add environment variables in Netlify:
-   - `VITE_MAPBOX_KEY`
-   - `VITE_LLM_API_KEY`
-   - `VITE_LLM_ENDPOINT`
+   - `MAPBOX_TOKEN` (optional - Nominatim fallback works)
+   - `OPENROUTER_API_KEY` (optional - narratives work without it)
 
 ### Netlify Functions
 
-The app expects a Netlify function at `/api/getNarrative` to handle LLM requests. Create a function in `netlify/functions/getNarrative`:
+The app uses two Netlify functions:
+- `/api/getNarrative` - Generates LLM narratives using OpenRouter
+- `/api/geocode` - Server-side geocoding (protects Mapbox key)
 
-```javascript
-exports.handler = async (event) => {
-  const { name, address, year, architect, landmarkDate, style } = JSON.parse(event.body);
-
-  // Call your LLM API here
-  const response = await fetch(VITE_LLM_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${VITE_LLM_API_KEY}`
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{
-          text: `Generate a friendly, engaging narrative about this historic building for architecture enthusiasts. Include its significance, architectural style, and interesting facts. Be concise but informative.
-
-Building: ${name}
-Address: ${address}
-Year Built: ${year}
-Architect: ${architect}
-Landmark Date: ${landmarkDate}
-Style: ${style}
-
-Focus on what makes this building special and why visitors should appreciate it.`
-        }]
-      }]
-    })
-  });
-
-  const data = await response.json();
-  return {
-    statusCode: 200,
-    body: JSON.stringify({
-      narrative: data.candidates[0].content.parts[0].text
-    })
-  };
-};
-```
+Both functions are already implemented in `netlify/functions/`.
 
 ## Data Sources
 

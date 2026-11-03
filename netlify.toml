@@ -10,6 +10,11 @@
   to = "/.netlify/functions/getNarrative"
   status = 200
 
+[[redirects]]
+  from = "/api/geocode"
+  to = "/.netlify/functions/geocode"
+  status = 200
+
 [[headers]]
   for = "/*"
     [headers.values]
