@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import './App.css';
+import landmarkStyles from './data/landmarkStyles.json';
 
 // Fix for default marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -20,6 +21,7 @@ function App() {
   const [error, setError] = useState(null);
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [narrative, setNarrative] = useState('');
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
 
   // Geocode location using server-side function (with fallback to Nominatim)
   const geocodeLocation = async (address) => {
@@ -59,6 +61,34 @@ function App() {
     }
   };
 
+  // Get coordinates from building safely
+  const getLatLng = (building) => {
+    if (building.latitude && building.longitude) {
+      return {
+        lat: parseFloat(building.latitude),
+        lng: parseFloat(building.longitude)
+      };
+    }
+    const coords = building.the_geom?.coordinates?.[0]?.[0]?.[0];
+    if (Array.isArray(coords) && coords.length >= 2 && typeof coords[0] === 'number') {
+      return { lng: coords[0], lat: coords[1] };
+    }
+    return null;
+  };
+
+  // Haversine distance in meters
+  const haversineDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371000; // Earth radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
   // Get buildings from Socrata within a circle
   const getBuildings = async (lat, lng) => {
     try {
@@ -74,14 +104,16 @@ function App() {
       );
       const chrsData = await chrsResponse.json();
 
-      // Merge and sort by distance
+      // Merge and filter out buildings without coordinates
       const allBuildings = [...data, ...chrsData]
+        .map(b => {
+          const coords = getLatLng(b);
+          return coords ? { ...b, coords } : null;
+        })
+        .filter(b => b !== null)
         .map(b => ({
           ...b,
-          distance: Math.sqrt(
-            Math.pow(lat - (b.latitude || b.the_geom.coordinates[0][0][0][0][1]), 2) +
-            Math.pow(lng - (b.longitude || b.the_geom.coordinates[0][0][0][0][0]), 2)
-          )
+          distance: haversineDistance(lat, lng, b.coords.lat, b.coords.lng)
         }))
         .sort((a, b) => a.distance - b.distance);
 
@@ -91,10 +123,38 @@ function App() {
     }
   };
 
+  // Get style for a building
+  const getBuildingStyle = (building) => {
+    const name = building.name || building.landmarkna;
+    if (!name) return null;
+
+    // Normalize name for matching
+    const normalizedName = name.toLowerCase().replace(/^the\s+/, '').trim();
+
+    // Try exact match first
+    for (const [styleName, styleData] of Object.entries(landmarkStyles)) {
+      const normalizedStyle = styleName.toLowerCase();
+      if (normalizedName === normalizedStyle) {
+        return styleData;
+      }
+    }
+
+    // Try partial match (building name contains style name)
+    for (const [styleName, styleData] of Object.entries(landmarkStyles)) {
+      const normalizedStyle = styleName.toLowerCase();
+      if (normalizedName.includes(normalizedStyle)) {
+        return styleData;
+      }
+    }
+
+    return null;
+  };
+
   // Get narrative from LLM
   const getNarrative = async (building) => {
     try {
-      setLoading(true);
+      setNarrativeLoading(true);
+      const style = getBuildingStyle(building);
       const response = await fetch('/api/getNarrative', {
         method: 'POST',
         headers: {
@@ -106,7 +166,7 @@ function App() {
           year: building.date_built || building.decade,
           architect: building.architect || 'Unknown',
           landmarkDate: building.landmark || building.valid_date,
-          style: null // Will be inferred from style mapping
+          style: style ? style.name : null
         })
       });
 
@@ -115,7 +175,7 @@ function App() {
     } catch (err) {
       setError(`Failed to get narrative: ${err.message}`);
     } finally {
-      setLoading(false);
+      setNarrativeLoading(false);
     }
   };
 
@@ -225,10 +285,7 @@ function App() {
               {buildings.map((building, index) => (
                 <Marker
                   key={index}
-                  position={[
-                    building.latitude || building.the_geom.coordinates[0][0][0][0][1],
-                    building.longitude || building.the_geom.coordinates[0][0][0][0][0]
-                  ]}
+                  position={[building.coords.lat, building.coords.lng]}
                 >
                   <Popup>
                     <strong>{building.name || building.landmarkna}</strong><br />
@@ -270,7 +327,7 @@ function App() {
 
               <div className="narrative-section">
                 <h4>About this building</h4>
-                {loading && selectedBuilding === selectedBuilding ? (
+                {narrativeLoading ? (
                   <p>Generating narrative...</p>
                 ) : (
                   <p>{narrative || 'No narrative available'}</p>
@@ -288,18 +345,20 @@ function App() {
                 </ul>
               </div>
 
-              <div className="style-section">
-                <h4>About this architecture style</h4>
-                <p>
-                  <a
-                    href="https://webapps1.chicago.gov/landmarksweb/web/styledetails.htm?styId=190"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    View Chicago School details
-                  </a>
-                </p>
-              </div>
+              {getBuildingStyle(selectedBuilding) && (
+                <div className="style-section">
+                  <h4>About this architecture style</h4>
+                  <p>
+                    <a
+                      href={getBuildingStyle(selectedBuilding).url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      View {getBuildingStyle(selectedBuilding).name} details
+                    </a>
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
