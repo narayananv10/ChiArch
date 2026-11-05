@@ -150,34 +150,35 @@ function App() {
     return null;
   };
 
-  // Get narrative from LLM
-  const getNarrative = async (building) => {
-    try {
-      setNarrativeLoading(true);
-      const style = getBuildingStyle(building);
-      const response = await fetch('/api/getNarrative', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: building.name || building.landmarkna,
-          address: building.address || `${building.bldg_f_add} ${building.bldg_st_name}`,
-          year: building.date_built || building.decade,
-          architect: building.architect || 'Unknown',
-          landmarkDate: building.landmark || building.valid_date,
-          style: style ? style.name : null
-        })
-      });
+    // Get narrative from LLM
+    const getNarrative = async (building) => {
+      try {
+        setNarrativeLoading(true);
+        const style = getBuildingStyle(building);
+        const response = await fetch('/api/getNarrative', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: building.name || building.landmarkna,
+            address: building.address || `${building.bldg_f_add} ${building.bldg_st_name}`,
+            year: building.date_built || building.decade,
+            architect: building.architect || 'Unknown',
+            landmarkDate: building.landmark || building.valid_date,
+            style: style ? style.name : null,
+            color: building.color
+          })
+        });
 
-      const data = await response.json();
-      setNarrative(data.narrative);
-    } catch (err) {
-      setError(`Failed to get narrative: ${err.message}`);
-    } finally {
-      setNarrativeLoading(false);
-    }
-  };
+        const data = await response.json();
+        setNarrative(data.narrative);
+      } catch (err) {
+        setError(`Failed to get narrative: ${err.message}`);
+      } finally {
+        setNarrativeLoading(false);
+      }
+    };
 
   const handleSearch = async () => {
     if (!location.trim()) return;

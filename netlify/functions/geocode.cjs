@@ -6,7 +6,7 @@ exports.handler = async (event) => {
     const mapboxKey = process.env.MAPBOX_TOKEN;
     if (mapboxKey) {
       const response = await fetch(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxKey}`
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?access_token=${mapboxKey}&bbox=-87.9402,41.6445,-87.5239,42.0230`
       );
       const data = await response.json();
       if (data.features && data.features.length > 0) {
