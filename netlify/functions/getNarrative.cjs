@@ -1,6 +1,6 @@
 exports.handler = async (event) => {
   try {
-    const { name, address, year, architect, landmarkDate, style } = JSON.parse(event.body);
+    const { name, address, year, architect, landmarkDate, style, color } = JSON.parse(event.body);
 
     // Generate narrative prompt
     const prompt = `Generate a narrative about this building based ONLY on the verified facts provided. Do NOT add any information not explicitly stated in the facts.
@@ -8,7 +8,7 @@ exports.handler = async (event) => {
 VERIFIED FACTS:
 - Name: ${name}
 - Address: ${address}
-- Year Built: ${year}
+- Year Built: ${year || 'Unknown'}
 - Architect: ${architect}
 - Landmark Date: ${landmarkDate}
 - Style: ${style || 'Unknown'}
