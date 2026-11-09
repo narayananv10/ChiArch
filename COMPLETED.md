@@ -1,107 +1,48 @@
-# Chicago Architecture Explorer - COMPLETED ✅
+# Project Status
 
-The web app has been successfully built and is ready for deployment.
+_Last updated: 2026-11-09_
 
-## What Was Built
+An honest snapshot of where the Chicago Architecture Explorer stands. Update this as things change.
 
-A **mobile-first, PWA-capable React application** that:
+## Goal
 
-1. ✅ **Geocodes cross streets** (e.g., "Milwaukee & Damen") using Mapbox with Nominatim fallback
-2. ✅ **Uses GPS location** via browser Geolocation API
-3. ✅ **Queries Chicago data** via Socrata's `within_circle` API (400m radius)
-4. ✅ **Displays results** on an interactive OpenStreetMap-based map
-5. ✅ **Shows building details** with verified facts (year, architect, designation date)
-6. ✅ **Links to architecture styles** on the official Chicago Landmarks website
-7. ✅ **Generates narratives** via LLM (Google Gemini Flash) through a secure Netlify function
-8. ✅ **Works offline** as a PWA (installable on mobile home screens)
-9. ✅ **Free tier friendly** - all APIs have generous free tiers
+A phone-friendly companion for walking around Chicago: when you see an interesting building, tap "Use My Location" (or enter cross streets) and get every historic building nearby with **when it was built, who designed it, its architecture style**, and some context.
 
-## Files Created
+## Working
 
-```
-chiarch/
-├── src/
-│   ├── App.jsx          - Main application component
-│   ├── App.css          - Mobile-responsive styling
-│   └── main.jsx         - React entry point
-├── public/
-│   ├── manifest.webmanifest - PWA manifest
-│   └── index.html       - HTML template (mobile-optimized)
-├── netlify/
-│   └── functions/
-│       └── getNarrative.js - LLM narrative endpoint
-├── netlify.toml         - Netlify deployment config
-├── package.json         - Dependencies
-├── README.md            - Setup instructions
-└── COMPLETED.md        - This file
-```
+- Cross-street geocoding through a Netlify function (Mapbox bounded to Chicago, then Nominatim)
+- GPS location through the browser Geolocation API
+- 400 m radius search against two City of Chicago Socrata datasets (Individual Landmarks, CHRS Red/Orange)
+- Leaflet map with markers and a distance-sorted list
+- Detail card showing dataset facts (address, year/decade, architect where available, landmark date, CHRS color)
+- LLM narrative through OpenRouter, with a prompt limited to the provided facts (requires `OPENROUTER_API_KEY`)
+- Netlify config (build, Node 20, `/api/*` redirects, security headers)
+- Web manifest, so it can be added to a phone's home screen
 
-## How to Use
+## Partial or broken
 
-### Local Development
+| Area | Problem |
+|---|---|
+| Architecture style | No style data in either dataset. The app matches the building *name* against style names, which almost never works. |
+| Architect | Only present for Individual Landmarks; CHRS buildings always show "Unknown". |
+| Narrative without an API key | The function throws and the UI shows "No narrative available". The front end doesn't check `response.ok`. |
+| Duplicates | Buildings in both datasets can appear twice; there is no deduplication. |
+| Narrative race | Tapping buildings quickly can show the wrong building's narrative if replies arrive out of order. |
+| Socrata reliability | The API sometimes returns "Service unavailable"; the app doesn't detect it and shows zero results. |
+| Geocode edge case | `geocode.cjs` has no guard for malformed Mapbox/Nominatim responses. |
+| Local dev | `npm run dev` doesn't run the functions; you need `netlify dev`. |
+| Map marker icons | Loaded from unpkg Leaflet 1.7.1 while the project uses 1.9.4. |
 
-```bash
-cd chiarch
-npm install
-npm run dev
-```
+## Not built
 
-Open [http://localhost:5173](http://localhost:5173)
+- Offline support / service worker (despite earlier docs claiming it)
+- Narrative caching (the same building costs an LLM call every time it's viewed)
+- Rate limiting on the public `/api/getNarrative` endpoint
+- Tests
+- License file
 
-### Deployment (Netlify)
+## Next up
 
-1. Create a Netlify account
-2. Connect your GitHub repository
-3. Set build command: `npm run build`
-4. Set publish directory: `dist`
-5. Add environment variables:
-   - `VITE_MAPBOX_KEY` (optional - Nominatim works as fallback)
-   - `VITE_LLM_API_KEY` (optional - narratives work without it)
-
-## Data Sources Verified
-
-- ✅ Individual Landmarks (412 buildings) - `uct4-hrvh`
-- ✅ Chicago Historic Resources Survey (9,298 buildings) - `2u8t-236p`
-- ✅ Architecture Styles - [Chicago Landmarks](https://webapps1.chicago.gov/landmarksweb/web/styledetails.htm)
-
-## API Endpoints Tested
-
-```bash
-# Socrata within_circle query (Loop area)
-curl "https://data.cityofchicago.org/resource/uct4-hrvh.json?\$where=within_circle(the_geom,41.8781,-87.6298,400)&\$limit=5"
-
-# Returns: Marquette Building, Steger Building, Palmer House Hotel, etc.
-```
-
-## Free Tier Limits (Safe for Personal Use)
-
-- **Mapbox**: 100,000 req/month ≈ 3,000 searches/day
-- **Gemini Flash**: 1,500 req/day
-- **Socrata**: No limits
-- **Nominatim**: No key needed, rate-limited but sufficient
-
-## Next Steps for You
-
-1. Get free API keys (Mapbox and/or Gemini)
-2. Deploy to Netlify
-3. Test on mobile devices
-4. Write about your experience!
-
-## Technical Stack
-
-- **Frontend**: Vite + React + Leaflet
-- **Geocoding**: Mapbox (primary) + Nominatim (fallback)
-- **Data**: Socrata Open Data API
-- **LLM**: Google Gemini Flash (via Netlify function)
-- **Deployment**: Netlify (with serverless functions)
-- **PWA**: Workbox (via Vite PWA plugin)
-
-## Mobile Experience
-
-- ✅ Responsive design (3 breakpoints)
-- ✅ Touch-friendly controls
-- ✅ PWA installable ("Add to Home Screen")
-- ✅ Offline-capable (service worker)
-- ✅ GPS location support
-
-The app is **production-ready** and can be deployed as-is. The LLM narrative feature is optional and works even without API keys (shows placeholder text).
+1. Add richer data sources: style, architect, and building type from the city's full CHRS search database (joins on `form_number`), plus National Register status (`bqx3-yhry`)
+2. Fix the reliability issues above
+3. UI/UX pass for on-foot use
