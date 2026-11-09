@@ -1,205 +1,93 @@
-import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { useEffect, useRef, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import './App.css';
-import landmarkStyles from './data/landmarkStyles.json';
+import { getNearby, getLandmarkDetails, narrativeFacts, displayName, preload, RADIUS_M } from './lib/buildings.js';
 
-// Fix for default marker icons
+// Bundle Leaflet's marker images instead of hotlinking a different version from a CDN
 delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-});
+L.Icon.Default.mergeOptions({ iconUrl: markerIcon, iconRetinaUrl: markerIcon2x, shadowUrl: markerShadow });
+
+const formatDate = (iso) =>
+  iso ? new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }) : null;
+
+const formatDistance = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
+
+const NARRATIVE_ERRORS = {
+  not_configured: null, // feature off: show nothing
+  daily_limit: 'AI descriptions have hit their daily limit. Try again tomorrow.',
+  rate_limited: "You're going a bit fast. Wait a minute and tap the building again.",
+  default: "Couldn't generate a description right now.",
+};
+
+async function geocode(q) {
+  const res = await fetch('/api/geocode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ q }),
+  });
+  const data = await res.json().catch(() => null);
+  if (res.ok && Number.isFinite(data?.lat) && Number.isFinite(data?.lng)) return data;
+  if (res.status === 404) throw new Error(`Couldn't find "${q}" in Chicago. Try cross streets like "Milwaukee & Damen".`);
+  if (res.status === 429) throw new Error('Too many searches in a short time. Wait a minute and try again.');
+  throw new Error('Location search is unavailable right now.');
+}
+
+function Recenter({ center }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView([center.lat, center.lng], Math.max(map.getZoom(), 16));
+  }, [center, map]);
+  return null;
+}
 
 function App() {
   const [location, setLocation] = useState('');
   const [center, setCenter] = useState(null);
   const [buildings, setBuildings] = useState([]);
+  const [districts, setDistricts] = useState([]);
+  const [dataDate, setDataDate] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedBuilding, setSelectedBuilding] = useState(null);
-  const [narrative, setNarrative] = useState('');
-  const [narrativeLoading, setNarrativeLoading] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [details, setDetails] = useState(null); // official landmark details
+  const [narrative, setNarrative] = useState({ status: 'idle', text: '' });
 
-  // Geocode location using server-side function (with fallback to Nominatim)
-  const geocodeLocation = async (address) => {
-    try {
-      // Try server-side geocode first
-      const response = await fetch('/api/geocode', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ q: address })
-      });
+  const selectionId = useRef(0); // ignore responses for buildings no longer selected
+  const narrativeCache = useRef(new Map());
 
-      if (response.ok) {
-        const data = await response.json();
-        return {
-          lat: data.lat,
-          lng: data.lng
-        };
-      }
+  useEffect(preload, []);
 
-      // Fallback to Nominatim
-      const response2 = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`
-      );
-      const data = await response2.json();
-      if (data && data.length > 0) {
-        return {
-          lat: parseFloat(data[0].lat),
-          lng: parseFloat(data[0].lon)
-        };
-      }
-
-      throw new Error('Location not found');
-    } catch (err) {
-      throw new Error(`Geocoding failed: ${err.message}`);
-    }
+  const showNear = async (coords) => {
+    setCenter(coords);
+    const result = await getNearby(coords.lat, coords.lng);
+    setBuildings(result.buildings);
+    setDistricts(result.districts);
+    setDataDate(result.generated);
+    if (result.buildings.length) select(result.buildings[0]);
   };
 
-  // Get coordinates from building safely
-  const getLatLng = (building) => {
-    if (building.latitude && building.longitude) {
-      return {
-        lat: parseFloat(building.latitude),
-        lng: parseFloat(building.longitude)
-      };
-    }
-    const coords = building.the_geom?.coordinates?.[0]?.[0]?.[0];
-    if (Array.isArray(coords) && coords.length >= 2 && typeof coords[0] === 'number') {
-      return { lng: coords[0], lat: coords[1] };
-    }
-    return null;
-  };
-
-  // Haversine distance in meters
-  const haversineDistance = (lat1, lng1, lat2, lng2) => {
-    const R = 6371000; // Earth radius in meters
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLng/2) * Math.sin(dLng/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
-
-  // Get buildings from Socrata within a circle
-  const getBuildings = async (lat, lng) => {
-    try {
-      const radius = 400; // meters
-      const response = await fetch(
-        `https://data.cityofchicago.org/resource/uct4-hrvh.json?$where=within_circle(the_geom,${lat},${lng},${radius})&$limit=20`
-      );
-      const data = await response.json();
-
-      // Also get CHRS buildings
-      const chrsResponse = await fetch(
-        `https://data.cityofchicago.org/resource/2u8t-236p.json?$where=within_circle(the_geom,${lat},${lng},${radius})&$limit=20`
-      );
-      const chrsData = await chrsResponse.json();
-
-      // Merge and filter out buildings without coordinates
-      const allBuildings = [...data, ...chrsData]
-        .map(b => {
-          const coords = getLatLng(b);
-          return coords ? { ...b, coords } : null;
-        })
-        .filter(b => b !== null)
-        .map(b => ({
-          ...b,
-          distance: haversineDistance(lat, lng, b.coords.lat, b.coords.lng)
-        }))
-        .sort((a, b) => a.distance - b.distance);
-
-      return allBuildings;
-    } catch (err) {
-      throw new Error(`Failed to fetch buildings: ${err.message}`);
-    }
-  };
-
-  // Get style for a building
-  const getBuildingStyle = (building) => {
-    const name = building.name || building.landmarkna;
-    if (!name) return null;
-
-    // Normalize name for matching
-    const normalizedName = name.toLowerCase().replace(/^the\s+/, '').trim();
-
-    // Try exact match first
-    for (const [styleName, styleData] of Object.entries(landmarkStyles)) {
-      const normalizedStyle = styleName.toLowerCase();
-      if (normalizedName === normalizedStyle) {
-        return styleData;
-      }
-    }
-
-    // Try partial match (building name contains style name)
-    for (const [styleName, styleData] of Object.entries(landmarkStyles)) {
-      const normalizedStyle = styleName.toLowerCase();
-      if (normalizedName.includes(normalizedStyle)) {
-        return styleData;
-      }
-    }
-
-    return null;
-  };
-
-    // Get narrative from LLM
-    const getNarrative = async (building) => {
-      try {
-        setNarrativeLoading(true);
-        const style = getBuildingStyle(building);
-        const response = await fetch('/api/getNarrative', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name: building.name || building.landmarkna,
-            address: building.address || `${building.bldg_f_add} ${building.bldg_st_name}`,
-            year: building.date_built || building.decade,
-            architect: building.architect || 'Unknown',
-            landmarkDate: building.landmark || building.valid_date,
-            style: style ? style.name : null,
-            color: building.color
-          })
-        });
-
-        const data = await response.json();
-        setNarrative(data.narrative);
-      } catch (err) {
-        setError(`Failed to get narrative: ${err.message}`);
-      } finally {
-        setNarrativeLoading(false);
-      }
-    };
-
-  const handleSearch = async () => {
-    if (!location.trim()) return;
-
-    setLoading(true);
+  const resetResults = () => {
     setError(null);
     setBuildings([]);
-    setSelectedBuilding(null);
-    setNarrative('');
+    setDistricts([]);
+    setSelected(null);
+    setDetails(null);
+    setNarrative({ status: 'idle', text: '' });
+  };
 
+  const handleSearch = async (e) => {
+    e?.preventDefault();
+    const q = location.trim();
+    if (!q) return;
+    setLoading(true);
+    resetResults();
     try {
-      const coords = await geocodeLocation(location);
-      setCenter(coords);
-
-      const buildings = await getBuildings(coords.lat, coords.lng);
-      setBuildings(buildings);
-
-      if (buildings.length > 0) {
-        setSelectedBuilding(buildings[0]);
-        await getNarrative(buildings[0]);
-      }
+      await showNear(await geocode(q));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -208,38 +96,84 @@ function App() {
   };
 
   const handleUseLocation = () => {
-    if (navigator.geolocation) {
-      setLoading(true);
-      setError(null);
-
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          setCenter({ lat: latitude, lng: longitude });
-
-          try {
-            const buildings = await getBuildings(latitude, longitude);
-            setBuildings(buildings);
-
-            if (buildings.length > 0) {
-              setSelectedBuilding(buildings[0]);
-              await getNarrative(buildings[0]);
-            }
-          } catch (err) {
-            setError(err.message);
-          } finally {
-            setLoading(false);
-          }
-        },
-        (err) => {
-          setError(`Geolocation failed: ${err.message}`);
+    if (!navigator.geolocation) {
+      setError('Location is not supported by this browser.');
+      return;
+    }
+    setLoading(true);
+    resetResults();
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          await showNear({ lat: coords.latitude, lng: coords.longitude });
+        } catch (err) {
+          setError(err.message);
+        } finally {
           setLoading(false);
         }
-      );
-    } else {
-      setError('Geolocation is not supported by your browser');
+      },
+      (err) => {
+        setError(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location permission was denied. Enable it in your browser settings, or type cross streets instead.'
+            : `Couldn't get your location (${err.message}).`
+        );
+        setLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+    );
+  };
+
+  const select = async (building) => {
+    const id = ++selectionId.current;
+    setSelected(building);
+    setDetails(null);
+    setNarrative({ status: 'idle', text: '' });
+
+    // Prefer the official landmark description over an AI one
+    let official = null;
+    try {
+      official = await getLandmarkDetails(building.landmarkId);
+    } catch {
+      /* fall through to AI */
+    }
+    if (id !== selectionId.current) return;
+    if (official?.description) {
+      setDetails(official);
+      return;
+    }
+
+    const cached = narrativeCache.current.get(building.key);
+    if (cached) {
+      setNarrative({ status: 'done', text: cached });
+      return;
+    }
+
+    setNarrative({ status: 'loading', text: '' });
+    try {
+      const res = await fetch('/api/getNarrative', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(narrativeFacts(building)),
+      });
+      const data = await res.json().catch(() => null);
+      if (id !== selectionId.current) return;
+      if (res.ok && data?.narrative) {
+        narrativeCache.current.set(building.key, data.narrative);
+        setNarrative({ status: 'done', text: data.narrative });
+      } else {
+        const code = res.status === 429 && !data?.error ? 'rate_limited' : data?.error;
+        const message = code in NARRATIVE_ERRORS ? NARRATIVE_ERRORS[code] : NARRATIVE_ERRORS.default;
+        setNarrative({ status: message ? 'error' : 'off', text: message ?? '' });
+      }
+    } catch {
+      if (id === selectionId.current) setNarrative({ status: 'error', text: NARRATIVE_ERRORS.default });
     }
   };
+
+  const yearText = details?.yearBuilt || selected?.yearBuilt;
+  // Survey style first; otherwise the style the City's landmark page links to
+  const styles = selected?.styles.length ? selected.styles : details?.styles ?? [];
 
   return (
     <div className="app">
@@ -249,49 +183,47 @@ function App() {
       </header>
 
       <div className="search-container">
-        <div className="search-inputs">
+        <form className="search-inputs" onSubmit={handleSearch}>
           <input
             type="text"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
-            placeholder="Enter cross streets (e.g., Milwaukee & Damen)"
+            placeholder="Cross streets, e.g. Milwaukee & Damen"
             disabled={loading}
+            enterKeyHint="search"
           />
-          <button onClick={handleSearch} disabled={loading || !location.trim()}>
+          <button type="submit" disabled={loading || !location.trim()}>
             {loading ? 'Searching...' : 'Search'}
           </button>
-          <button onClick={handleUseLocation} disabled={loading}>
-            {loading ? 'Loading...' : '📍 Use My Location'}
+          <button type="button" onClick={handleUseLocation} disabled={loading}>
+            📍 Use My Location
           </button>
-        </div>
-
-        {error && <div className="error">{error}</div>}
+        </form>
+        {error && (
+          <div className="error" role="alert">
+            {error}
+          </div>
+        )}
       </div>
 
       {center && (
         <div className="results-container">
           <div className="map-container">
-            <MapContainer
-              center={[center.lat, center.lng]}
-              zoom={16}
-              style={{ height: '400px', width: '100%' }}
-            >
+            <MapContainer center={[center.lat, center.lng]} zoom={16} style={{ height: '400px', width: '100%' }}>
+              <Recenter center={center} />
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               />
-              <Marker position={[center.lat, center.lng]} icon={new L.Icon.Default({ iconSize: [24, 24] })}>
-                <Popup>Your location</Popup>
-              </Marker>
-              {buildings.map((building, index) => (
-                <Marker
-                  key={index}
-                  position={[building.coords.lat, building.coords.lng]}
-                >
+              <CircleMarker center={[center.lat, center.lng]} radius={8} pathOptions={{ color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }}>
+                <Popup>You are here</Popup>
+              </CircleMarker>
+              {buildings.map((b) => (
+                <Marker key={b.key} position={[b.lat, b.lng]} eventHandlers={{ click: () => select(b) }}>
                   <Popup>
-                    <strong>{building.name || building.landmarkna}</strong><br />
-                    {building.address || `${building.bldg_f_add} ${building.bldg_st_name}`}<br />
-                    {building.date_built || building.decade}
+                    <strong>{displayName(b)}</strong>
+                    <br />
+                    {b.yearBuilt}
                   </Popup>
                 </Marker>
               ))}
@@ -299,71 +231,162 @@ function App() {
           </div>
 
           <div className="buildings-list">
-            <h3>Nearby Buildings ({buildings.length})</h3>
+            <h3>
+              Nearby Buildings ({buildings.length}) <small>within {RADIUS_M} m</small>
+            </h3>
+            {districts.length > 0 && (
+              <p className="districts">
+                <strong>Historic districts nearby:</strong> {districts.map((d) => d.name).join(', ')}
+              </p>
+            )}
             {buildings.length === 0 ? (
-              <p>No historic buildings found nearby.</p>
+              <p>No historic buildings found within {RADIUS_M} m.</p>
             ) : (
               <ul>
-                {buildings.map((building, index) => (
-                  <li
-                    key={index}
-                    className={selectedBuilding === building ? 'selected' : ''}
-                    onClick={() => {
-                      setSelectedBuilding(building);
-                      getNarrative(building);
-                    }}
-                  >
-                    <strong>{building.name || building.landmarkna}</strong><br />
-                    <small>{building.address || `${building.bldg_f_add} ${building.bldg_st_name}`}</small><br />
-                    <small>{building.date_built || building.decade}</small>
+                {buildings.map((b) => (
+                  <li key={b.key} className={selected?.key === b.key ? 'selected' : ''} onClick={() => select(b)}>
+                    <strong>{displayName(b)}</strong>
+                    <br />
+                    <small>
+                      {[b.name ? b.address : null, b.yearBuilt, b.styles[0]?.name].filter(Boolean).join(' · ')}
+                    </small>
+                    <br />
+                    <small>{formatDistance(b.distance)} away</small>
                   </li>
                 ))}
               </ul>
             )}
           </div>
 
-          {selectedBuilding && (
+          {selected && (
             <div className="building-detail">
-              <h3>{selectedBuilding.name || selectedBuilding.landmarkna}</h3>
+              <h3>{displayName(selected)}</h3>
+              {selected.historicName && selected.historicName !== selected.name && (
+                <p className="historic-name">Historically: {selected.historicName}</p>
+              )}
+
+              {details?.photo && (
+                <figure className="building-photo">
+                  <img src={details.photo} alt={details.photoAlt || displayName(selected)} loading="lazy" />
+                  <figcaption>Photo: Commission on Chicago Landmarks</figcaption>
+                </figure>
+              )}
 
               <div className="narrative-section">
                 <h4>About this building</h4>
-                {narrativeLoading ? (
-                  <p>Generating narrative...</p>
+                {details?.description ? (
+                  <>
+                    <p>{details.description}</p>
+                    <p className="source">
+                      Official description from the Commission on Chicago Landmarks.{' '}
+                      <a href={details.url} target="_blank" rel="noopener noreferrer">
+                        View on the City&apos;s Landmarks site →
+                      </a>
+                    </p>
+                    {details.moreLinks?.length > 0 && (
+                      <div className="more-info">
+                        <strong>More information</strong>
+                        <ul>
+                          {details.moreLinks.map((l) => (
+                            <li key={l.url}>
+                              <a href={l.url} target="_blank" rel="noopener noreferrer">
+                                {l.label}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
+                ) : narrative.status === 'loading' ? (
+                  <p>Writing a description...</p>
+                ) : narrative.status === 'done' ? (
+                  <>
+                    <p>{narrative.text}</p>
+                    <p className="source">AI-written summary of the facts below. Check the facts for anything important.</p>
+                  </>
+                ) : narrative.status === 'error' ? (
+                  <p className="muted">{narrative.text}</p>
                 ) : (
-                  <p>{narrative || 'No narrative available'}</p>
+                  <p className="muted">No description available.</p>
                 )}
               </div>
 
               <div className="facts-section">
-                <h4>Verified Facts</h4>
+                <h4>Verified facts</h4>
                 <ul>
-                  <li><strong>Address:</strong> {selectedBuilding.address || `${selectedBuilding.bldg_f_add} ${selectedBuilding.bldg_st_name}`}</li>
-                  <li><strong>Year Built:</strong> {selectedBuilding.date_built || selectedBuilding.decade}</li>
-                  <li><strong>Architect:</strong> {selectedBuilding.architect || 'Unknown'}</li>
-                  {selectedBuilding.landmark && <li><strong>Landmark Designation:</strong> {new Date(selectedBuilding.landmark).toLocaleDateString()}</li>}
-                  {selectedBuilding.color && <li><strong>CHRS Rating:</strong> {selectedBuilding.color}</li>}
+                  {selected.address && (
+                    <li>
+                      <strong>Address:</strong> {selected.address}
+                    </li>
+                  )}
+                  <li>
+                    <strong>Year built:</strong> {yearText || 'Not recorded'}
+                  </li>
+                  <li>
+                    <strong>Architect:</strong> {selected.architect || 'Not recorded'}
+                  </li>
+                  <li>
+                    <strong>Style:</strong> {styles.map((s) => s.name).join(', ') || 'Not recorded'}
+                  </li>
+                  {selected.type && (
+                    <li>
+                      <strong>Building type:</strong> {selected.type}
+                    </li>
+                  )}
+                  {selected.landmarkDate && (
+                    <li>
+                      <strong>Chicago Landmark since:</strong> {formatDate(selected.landmarkDate)}
+                    </li>
+                  )}
+                  {selected.nationalRegister && (
+                    <li>
+                      <strong>National:</strong> {selected.nationalRegister}
+                    </li>
+                  )}
+                  {selected.chrsMeaning && (
+                    <li>
+                      <strong>Historic Resources Survey:</strong> {selected.chrsMeaning}
+                    </li>
+                  )}
                 </ul>
               </div>
 
-              {getBuildingStyle(selectedBuilding) && (
-                <div className="style-section">
-                  <h4>About this architecture style</h4>
-                  <p>
-                    <a
-                      href={getBuildingStyle(selectedBuilding).url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      View {getBuildingStyle(selectedBuilding).name} details
-                    </a>
-                  </p>
-                </div>
-              )}
+              {styles
+                .filter((s) => s.guide)
+                .map((s) => (
+                  <div className="style-section" key={s.name}>
+                    <h4>About the {s.name} style</h4>
+                    {s.guide.summary && <p>{s.guide.summary}</p>}
+                    {s.guide.characteristics?.length > 0 && (
+                      <>
+                        <p>
+                          <strong>Common characteristics:</strong>
+                        </p>
+                        <ul>
+                          {s.guide.characteristics.map((c) => (
+                            <li key={c}>{c}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                    <p className="source">
+                      From the City&apos;s{' '}
+                      <a href={s.guide.url} target="_blank" rel="noopener noreferrer">
+                        Architectural Style Guide
+                      </a>
+                    </p>
+                  </div>
+                ))}
             </div>
           )}
         </div>
       )}
+
+      <footer className="app-footer">
+        Data: City of Chicago (Landmarks, Historic Resources Survey, National Register listings)
+        {dataDate && `, updated ${dataDate}`}. Map © OpenStreetMap contributors.
+      </footer>
     </div>
   );
 }

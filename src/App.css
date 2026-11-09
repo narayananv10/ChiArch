@@ -225,3 +225,60 @@ body {
     padding: 0.75rem;
   }
 }
+/* Added with the data-enrichment work; the full UI pass comes later */
+.buildings-list h3 small {
+  font-weight: 400;
+  color: #666;
+  font-size: 0.8rem;
+}
+
+.districts {
+  font-size: 0.9rem;
+  color: #555;
+  margin: 0 0 1rem;
+}
+
+.historic-name {
+  margin: -0.5rem 0 1rem;
+  color: #666;
+  font-style: italic;
+}
+
+.building-photo {
+  margin: 0 0 1rem;
+}
+
+.building-photo img {
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+
+.building-photo figcaption,
+.source {
+  font-size: 0.8rem;
+  color: #777;
+}
+
+.muted {
+  color: #777;
+}
+
+.app-footer {
+  margin: 2rem 0 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #777;
+}
+
+.more-info {
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.more-info ul {
+  margin: 0.25rem 0 0;
+  padding-left: 1.2rem;
+}
