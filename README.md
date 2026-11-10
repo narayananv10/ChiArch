@@ -24,6 +24,7 @@ About 9,000 buildings. Coverage is uneven because the City's records are:
 | Field | Share of buildings |
 |---|---|
 | Year or decade built | ~94% |
+| Building type (e.g. 2-3 Flat, Church, Commercial) | ~75% |
 | Architectural style | ~42% |
 | Architect | ~30% |
 | Official description + photo | 287 Chicago Landmarks |
