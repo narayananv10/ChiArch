@@ -1,6 +1,6 @@
 # Project Status
 
-_Last updated: 2026-11-09_
+_Last updated: 2026-11-10_
 
 An honest snapshot of where the Chicago Architecture Explorer stands. Update it as things change.
 
@@ -18,8 +18,10 @@ A phone-friendly companion for walking around Chicago: when you see an interesti
 - Official descriptions and photos for 287 Chicago Landmarks
 - City style-guide summaries and characteristics for 24 styles
 - National Register / National Historic Landmark status, plus nearby NR districts
-- AI description only when there's no official one: pinned low-cost model, shared cache (Netlify Blobs), per-IP rate limit, daily cap, and stale replies ignored
-- Functions validate their input and return clear errors; `npm run dev` runs them locally
+- Template summary for every non-landmark building, built from City records (no AI, no API calls, no running cost)
+- Building type for ~75% of buildings (e.g. 2-3 Flat, Church, Commercial)
+- "More information" links (checked to still work) and styles from the City's landmark pages
+- The geocode function validates input, is rate-limited per IP, and returns clear errors; `npm run dev` runs it locally
 - Tested end to end in headless Chrome at phone size (search, GPS, details, photo, errors)
 
 ## Partial / known gaps
@@ -31,19 +33,17 @@ A phone-friendly companion for walking around Chicago: when you see an interesti
 | Landmarks without descriptions | 30 Landmarks site pages (mostly bridges, monuments and some Bronzeville buildings) don't match a dataset record. |
 | Districts | NR districts are matched by bounding box, so "nearby" is approximate. Chicago Landmark Districts aren't included yet. |
 | Two crossings | If two streets cross in more than one place, the geocoder returns the first. |
-| Netlify features untested | Rate limiting and Blobs caching only run on Netlify; they're tested locally only as far as "degrades gracefully without them". |
+| Netlify rate limit untested | The geocode rate limit only runs on Netlify; it needs a deploy preview to verify. |
 | Photos | Loaded directly from the City's server (allowed today, but could change). |
 
 ## Not built
 
 - Offline support / service worker (the data files would cache well, which makes this a good next step)
 - Tests in the repo (only ad-hoc scripts so far)
-- License file
 - UI/UX pass for on-foot use
 
 ## Next up
 
-1. Deploy the branch to a Netlify preview and test rate limits, the cache, and real phone GPS
-2. Set a spending limit on the OpenRouter key
-3. UI/UX pass for on-foot use
-4. Offline support
+1. Test the Netlify deploy preview on a phone (real GPS, rate limit)
+2. UI/UX pass for on-foot use
+3. Offline support

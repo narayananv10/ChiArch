@@ -13,7 +13,6 @@
     "data:intersections": "node scripts/buildIntersections.mjs"
   },
   "dependencies": {
-    "@netlify/blobs": "^11.1.8",
     "leaflet": "^1.9.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

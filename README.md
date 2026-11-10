@@ -14,7 +14,7 @@ A mobile-first web app for looking up historic buildings near you while walking 
   - Chicago Historic Resources Survey rating (Red / Orange)
   - for Chicago Landmarks: the official description and photo from the Commission on Chicago Landmarks
   - for each style: the City's style-guide summary and common characteristics
-- **AI-written description** (optional) for buildings without an official one, generated only from the verified facts above.
+- **A one- or two-sentence summary** for every other building, filled into a fixed template from the facts above (no AI), e.g. *"An Italianate commercial building constructed in the 1880s, designed by William Ohlhaber."*
 - **Nearby historic districts** (National Register).
 
 ### Coverage
@@ -47,7 +47,7 @@ The data is prebuilt into `public/data/` and `netlify/lib/` by the scripts below
 
 ```bash
 npm run data                # survey styles/architects, landmark descriptions, style guide, merged buildings.json
-npm run data:types          # also building types from each survey record (~6,500 requests, about 1.5 hours; resumable)
+npm run data:types          # also building types from each survey record (~6,500 requests, roughly an hour; resumable)
 npm run data:intersections  # cross-street index for the geocoder
 ```
 
@@ -61,25 +61,21 @@ npm install
 npm run dev     # http://localhost:5173, including the /api functions
 ```
 
-`npm run dev` also serves the two Netlify functions at `/api/*` through a small Vite plugin, so you don't need the Netlify CLI. Rate limits and narrative caching only apply on Netlify.
+`npm run dev` also serves the Netlify geocode function at `/api/geocode` through a small Vite plugin, so you don't need the Netlify CLI. The rate limit only applies on Netlify.
 
 ### Environment variables
 
 | Variable | Required? | Used for |
 |---|---|---|
-| `OPENROUTER_API_KEY` | Only for AI descriptions | Without it, the AI description is simply hidden |
 | `MAPBOX_TOKEN` | Optional | Geocoding place names and addresses. Cross streets never need it; without it, place names fall back to OpenStreetMap Nominatim |
-| `NARRATIVE_MODEL` | Optional | OpenRouter model id (default `google/gemini-3.1-flash-lite`) |
-| `NARRATIVE_DAILY_LIMIT` | Optional | Max new AI descriptions per day, site-wide (default 300) |
 
-On Netlify, set these in the site's environment settings. Locally, put them in `chiarch/.env` (gitignored).
+That's the only one. On Netlify, set it in the site's environment settings. Locally, put it in `chiarch/.env` (gitignored).
 
 ## Deployment (Netlify)
 
-`netlify.toml` sets the build command, publish directory (`dist`), Node 22, and the esbuild function bundler. The functions declare their own paths and rate limits in code:
+`netlify.toml` sets the build command, publish directory (`dist`), Node 22, and the esbuild function bundler. There's one function, which declares its own path and rate limit in code:
 
 - `netlify/functions/geocode.mjs` → `/api/geocode` (30 requests/min per IP): cross-street index, then Mapbox, then Nominatim, all bounded to Chicago
-- `netlify/functions/getNarrative.mjs` → `/api/getNarrative` (10 requests/min per IP): OpenRouter, with results cached in Netlify Blobs so each building is only generated once, plus a daily cap
 
 ## How it fits together
 
@@ -89,23 +85,22 @@ On Netlify, set these in the site's environment settings. Locally, put them in `
   ├─ GPS
   ├─ nearby search: local distance filter over buildings.json
   └─ tap a building
-        ├─ Chicago Landmark? official description + photo
-        └─ otherwise: /api/getNarrative ─▶ Blobs cache ─▶ OpenRouter
+        ├─ Chicago Landmark? official description + photo + links
+        └─ otherwise: template summary from the facts (no API call)
 ```
 
 ## Running costs (approximate)
 
 | Service | Free allowance | What this app uses |
 |---|---|---|
-| Netlify | Free plan: 300 credits/month | Static site, 2 small functions, small Blobs cache |
-| OpenRouter | **None. Pay per token** | Only for non-landmark buildings, once per building (cached): about $0.0005 each |
+| Netlify | Free plan: 300 credits/month | Static site + 1 small function |
 | Mapbox (optional) | 100,000 requests/month | Place-name searches only |
 | Nominatim | Free; ~1 request/second policy | Fallback for place names |
 | City of Chicago data | Free | Only when rebuilding the data, not at runtime |
 
 ## Tech stack
 
-Vite, React 18, Leaflet / react-leaflet, Netlify Functions (v2) and Netlify Blobs.
+Vite, React 18, Leaflet / react-leaflet, Netlify Functions (v2).
 
 ## License
 

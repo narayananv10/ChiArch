@@ -150,11 +150,11 @@ body {
   margin-bottom: 1.5rem;
 }
 
-.narrative-section, .facts-section, .style-section {
+.about-section, .facts-section, .style-section {
   margin-bottom: 1.5rem;
 }
 
-.narrative-section h4, .facts-section h4, .style-section h4 {
+.about-section h4, .facts-section h4, .style-section h4 {
   color: var(--secondary-color);
   margin-bottom: 0.5rem;
   font-size: 1.1rem;

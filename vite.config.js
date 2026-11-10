@@ -4,9 +4,9 @@ import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
 // Serve netlify/functions/* at /api/* during `npm run dev`, so the app works
-// locally without the Netlify CLI. (Rate limits and Blobs caching only apply on Netlify.)
+// locally without the Netlify CLI. (Rate limits only apply on Netlify.)
 function netlifyFunctionsInDev() {
-  const routes = { '/api/geocode': 'geocode.mjs', '/api/getNarrative': 'getNarrative.mjs' };
+  const routes = { '/api/geocode': 'geocode.mjs' };
   return {
     name: 'netlify-functions-in-dev',
     configureServer(server) {
@@ -39,7 +39,7 @@ function netlifyFunctionsInDev() {
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // Expose .env values (MAPBOX_TOKEN, OPENROUTER_API_KEY) to the dev functions only
+  // Expose .env values (e.g. MAPBOX_TOKEN) to the dev functions only
   Object.assign(process.env, loadEnv(mode, process.cwd(), ''));
   return { plugins: [react(), netlifyFunctionsInDev()] };
 });

@@ -6,7 +6,8 @@ import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import './App.css';
-import { getNearby, getLandmarkDetails, narrativeFacts, displayName, preload, RADIUS_M } from './lib/buildings.js';
+import { getNearby, getLandmarkDetails, displayName, preload, RADIUS_M } from './lib/buildings.js';
+import { summarize } from './lib/summary.js';
 
 // Bundle Leaflet's marker images instead of hotlinking a different version from a CDN
 delete L.Icon.Default.prototype._getIconUrl;
@@ -16,13 +17,6 @@ const formatDate = (iso) =>
   iso ? new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }) : null;
 
 const formatDistance = (m) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
-
-const NARRATIVE_ERRORS = {
-  not_configured: null, // feature off: show nothing
-  daily_limit: 'AI descriptions have hit their daily limit. Try again tomorrow.',
-  rate_limited: "You're going a bit fast. Wait a minute and tap the building again.",
-  default: "Couldn't generate a description right now.",
-};
 
 async function geocode(q) {
   const res = await fetch('/api/geocode', {
@@ -55,10 +49,8 @@ function App() {
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
   const [details, setDetails] = useState(null); // official landmark details
-  const [narrative, setNarrative] = useState({ status: 'idle', text: '' });
 
   const selectionId = useRef(0); // ignore responses for buildings no longer selected
-  const narrativeCache = useRef(new Map());
 
   useEffect(preload, []);
 
@@ -77,7 +69,6 @@ function App() {
     setDistricts([]);
     setSelected(null);
     setDetails(null);
-    setNarrative({ status: 'idle', text: '' });
   };
 
   const handleSearch = async (e) => {
@@ -127,53 +118,20 @@ function App() {
   const select = async (building) => {
     const id = ++selectionId.current;
     setSelected(building);
-    setDetails(null);
-    setNarrative({ status: 'idle', text: '' });
-
-    // Prefer the official landmark description over an AI one
-    let official = null;
+    if (!building.landmarkId) return;
+    // Chicago Landmarks: load the official description, photo and links
     try {
-      official = await getLandmarkDetails(building.landmarkId);
+      const official = await getLandmarkDetails(building.landmarkId);
+      if (id === selectionId.current) setDetails(official);
     } catch {
-      /* fall through to AI */
-    }
-    if (id !== selectionId.current) return;
-    if (official?.description) {
-      setDetails(official);
-      return;
-    }
-
-    const cached = narrativeCache.current.get(building.key);
-    if (cached) {
-      setNarrative({ status: 'done', text: cached });
-      return;
-    }
-
-    setNarrative({ status: 'loading', text: '' });
-    try {
-      const res = await fetch('/api/getNarrative', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(narrativeFacts(building)),
-      });
-      const data = await res.json().catch(() => null);
-      if (id !== selectionId.current) return;
-      if (res.ok && data?.narrative) {
-        narrativeCache.current.set(building.key, data.narrative);
-        setNarrative({ status: 'done', text: data.narrative });
-      } else {
-        const code = res.status === 429 && !data?.error ? 'rate_limited' : data?.error;
-        const message = code in NARRATIVE_ERRORS ? NARRATIVE_ERRORS[code] : NARRATIVE_ERRORS.default;
-        setNarrative({ status: message ? 'error' : 'off', text: message ?? '' });
-      }
-    } catch {
-      if (id === selectionId.current) setNarrative({ status: 'error', text: NARRATIVE_ERRORS.default });
+      /* the summary from City records still shows */
     }
   };
 
   const yearText = details?.yearBuilt || selected?.yearBuilt;
   // Survey style first; otherwise the style the City's landmark page links to
   const styles = selected?.styles.length ? selected.styles : details?.styles ?? [];
+  const summary = selected ? summarize(selected, styles) : null;
 
   return (
     <div className="app">
@@ -272,7 +230,7 @@ function App() {
                 </figure>
               )}
 
-              <div className="narrative-section">
+              <div className="about-section">
                 <h4>About this building</h4>
                 {details?.description ? (
                   <>
@@ -298,15 +256,11 @@ function App() {
                       </div>
                     )}
                   </>
-                ) : narrative.status === 'loading' ? (
-                  <p>Writing a description...</p>
-                ) : narrative.status === 'done' ? (
+                ) : summary ? (
                   <>
-                    <p>{narrative.text}</p>
-                    <p className="source">AI-written summary of the facts below. Check the facts for anything important.</p>
+                    <p>{summary}</p>
+                    <p className="source">Summary of City of Chicago records.</p>
                   </>
-                ) : narrative.status === 'error' ? (
-                  <p className="muted">{narrative.text}</p>
                 ) : (
                   <p className="muted">No description available.</p>
                 )}

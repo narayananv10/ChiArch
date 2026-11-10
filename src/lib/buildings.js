@@ -114,22 +114,6 @@ export async function getLandmarkDetails(landmarkId) {
   };
 }
 
-/** Facts sent to the narrative endpoint (verified fields only). */
-export function narrativeFacts(b) {
-  return {
-    name: b.name ?? undefined,
-    historicName: b.historicName ?? undefined,
-    address: b.address ?? undefined,
-    year: b.yearBuilt ?? undefined,
-    architect: b.architect ?? undefined,
-    type: b.type ?? undefined,
-    styles: b.styles.map((s) => s.name).join(', ') || undefined,
-    styleSummary: b.styles[0]?.guide?.summary ?? undefined,
-    landmarkDate: b.landmarkDate ?? undefined,
-    chrsRating: b.chrsMeaning ?? undefined,
-    nationalRegister: b.nationalRegister ?? undefined,
-  };
-}
 
 /** Title for a building card: its name, else its address. */
 export const displayName = (b) => b.name || b.address || 'Unnamed building';

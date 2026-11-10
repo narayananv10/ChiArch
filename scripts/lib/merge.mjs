@@ -58,6 +58,14 @@ export function titleCase(s) {
   });
 }
 
+/** Survey lists people surname-first: "Ohlhaber, William" -> "William Ohlhaber". Firms are left alone. */
+export function naturalName(s) {
+  if (!s) return s;
+  const parts = s.split(',').map((p) => p.trim());
+  if (parts.length !== 2 || !parts[1] || /&|\b(co|inc|company|associates|sons|bros)\b\.?/i.test(s)) return s;
+  return `${parts[1]} ${parts[0]}`;
+}
+
 const looksLikeAddress = (s) => !s || s === 'null' || /^\d/.test(s.trim());
 
 const formatChrsAddress = (r) => {
@@ -102,7 +110,7 @@ export function mergeBuildings({ chrsDetails, landmarks, chrs, nrhp }) {
       historicName: survey?.historicName ? titleCase(survey.historicName) : null,
       address: lm.address,
       yearBuilt: lm.date_built || null,
-      architect: lm.architect && lm.architect !== 'Unknown' ? lm.architect : survey?.architect ? titleCase(survey.architect) : null,
+      architect: lm.architect && lm.architect !== 'Unknown' ? lm.architect : survey?.architect ? naturalName(titleCase(survey.architect)) : null,
       styles: survey?.styles ?? [],
       type: survey?.type ? titleCase(survey.type) : null,
       chrsColor: null,
@@ -162,7 +170,7 @@ export function mergeBuildings({ chrsDetails, landmarks, chrs, nrhp }) {
       historicName: null,
       address: formatChrsAddress(r),
       yearBuilt: years ?? decade,
-      architect: survey?.architect ? titleCase(survey.architect) : null,
+      architect: survey?.architect ? naturalName(titleCase(survey.architect)) : null,
       styles: survey?.styles ?? [],
       type: survey?.type ? titleCase(survey.type) : null,
       chrsColor: r.color || null,
