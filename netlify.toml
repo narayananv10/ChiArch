@@ -3,18 +3,12 @@
   publish = "dist"
 
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "22"
   NPM_VERSION = "10"
 
-[[redirects]]
-  from = "/api/getNarrative"
-  to = "/.netlify/functions/getNarrative"
-  status = 200
-
-[[redirects]]
-  from = "/api/geocode"
-  to = "/.netlify/functions/geocode"
-  status = 200
+# Functions declare their own /api/* paths and rate limits in code (export const config)
+[functions]
+  node_bundler = "esbuild"
 
 [[headers]]
   for = "/*"
