@@ -104,4 +104,4 @@ Vite, React 18, Leaflet / react-leaflet, Netlify Functions (v2).
 
 ## License
 
-No license file has been added yet. The building data and photos come from the City of Chicago.
+The code is released under the [MIT License](LICENSE). The building data, descriptions and photos come from the City of Chicago and aren't covered by that license; see the [City's data portal terms](https://www.chicago.gov/city/en/narr/foia/data_disclaimer.html).
