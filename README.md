@@ -1,97 +1,107 @@
 # Chicago Architecture Explorer
 
-A mobile-first web app to explore historic architecture in Chicago. Enter cross streets or use your location to find nearby landmarks and significant buildings.
+A mobile-first web app for looking up historic buildings near you while walking around Chicago. Enter cross streets or use your phone's location, and it lists the historic buildings within 400 m: when each was built, who designed it, its architectural style, and the City's official description where one exists.
 
-## Features
+**Status: working prototype, not yet deployed from this branch.** See [STATUS.md](STATUS.md) for what works, what's partial, and what's next.
 
-- **Geocoding**: Enter cross streets (e.g., "Milwaukee & Damen") or use your GPS location
-- **Nearby Buildings**: Find historic landmarks and CHRS-rated buildings within 400 meters
-- **Interactive Map**: View buildings on an OpenStreetMap-based map
-- **Building Details**: See verified facts (year built, architect, designation date) and architecture style information
-- **LLM Narratives**: Get human-readable descriptions of buildings (requires API key)
-- **PWA**: Installable as a mobile app
+## What it does
+
+- **Find a location** from cross streets ("Milwaukee & Damen", "LaSalle and Madison", "18th / Halsted") or the phone's GPS.
+- **List historic buildings within 400 m**, nearest first, on a map and in a list. Searches run locally against prebuilt data, so they take well under a second and don't depend on the City's API being up.
+- **Building details**, all from City of Chicago records:
+  - year built, architect, architectural style, building type, historic name
+  - Chicago Landmark designation date, National Register / National Historic Landmark status
+  - Chicago Historic Resources Survey rating (Red / Orange)
+  - for Chicago Landmarks: the official description and photo from the Commission on Chicago Landmarks
+  - for each style: the City's style-guide summary and common characteristics
+- **A one- or two-sentence summary** for every other building, filled into a fixed template from the facts above (no AI), e.g. *"An Italianate commercial building constructed in the 1880s, designed by William Ohlhaber."*
+- **Nearby historic districts** (National Register).
+
+### Coverage
+
+About 9,000 buildings. Coverage is uneven because the City's records are:
+
+| Field | Share of buildings |
+|---|---|
+| Year or decade built | ~94% |
+| Building type (e.g. 2-3 Flat, Church, Commercial) | ~75% |
+| Architectural style | ~42% |
+| Architect | ~30% |
+| Official description + photo | 287 Chicago Landmarks |
+
+The Historic Resources Survey covers buildings built before 1940, so newer buildings only appear if they're Chicago Landmarks or on the National Register.
+
+## Data sources
+
+| Source | What it provides |
+|---|---|
+| [Individual Landmarks](https://data.cityofchicago.org/d/uct4-hrvh) | Chicago Landmarks: name, address, year, architect, designation date |
+| [Historic Resources Survey – Red & Orange](https://data.cityofchicago.org/d/2u8t-236p) | ~9,300 survey buildings: location, decade, rating |
+| [CHRS search database](https://webapps1.chicago.gov/landmarksweb/search/home.htm) | Style, architect, building type, historic name (not in the open dataset) |
+| [Landmarks website](https://webapps1.chicago.gov/landmarksweb/web/listings.htm) | Official descriptions and photos |
+| [Architectural Style Guide](https://webapps1.chicago.gov/landmarksweb/web/styles.htm) | Style summaries and characteristics |
+| [National Register of Historic Places](https://data.cityofchicago.org/d/bqx3-yhry) | NR / NHL listings and districts |
+| [Street center lines](https://data.cityofchicago.org/d/pr57-gg9e) | Cross-street geocoding index |
+
+The data is prebuilt into `public/data/` and `netlify/lib/` by the scripts below and committed to the repo. Rebuild it occasionally (new landmarks are designated a few times a year).
+
+```bash
+npm run data                # survey styles/architects, landmark descriptions, style guide, merged buildings.json
+npm run data:types          # also building types from each survey record (~6,500 requests, roughly an hour; resumable)
+npm run data:intersections  # cross-street index for the geocoder
+```
+
+The scripts pause between requests to the City's servers.
 
 ## Setup
-
-### 1. Install dependencies
 
 ```bash
 cd chiarch
 npm install
+npm run dev     # http://localhost:5173, including the /api functions
 ```
 
-### 2. Get API keys (optional)
+`npm run dev` also serves the Netlify geocode function at `/api/geocode` through a small Vite plugin, so you don't need the Netlify CLI. The rate limit only applies on Netlify.
 
-- **Mapbox Geocoding**: Get a free API key from [Mapbox](https://www.mapbox.com/) (100,000 requests/month free)
-- **OpenRouter API**: Get a free API key from [OpenRouter](https://openrouter.ai/) (uses Google Gemini models)
+### Environment variables
 
-Create a `.env` file in the project root:
+| Variable | Required? | Used for |
+|---|---|---|
+| `MAPBOX_TOKEN` | Optional | Geocoding place names and addresses. Cross streets never need it; without it, place names fall back to OpenStreetMap Nominatim |
 
-```bash
-MAPBOX_TOKEN=your_mapbox_key_here
-OPENROUTER_API_KEY=your_openrouter_key_here
-```
+That's the only one. On Netlify, set it in the site's environment settings. Locally, put it in `chiarch/.env` (gitignored).
 
-### 3. Run the app
+## Deployment (Netlify)
 
-```bash
-npm run dev
-```
+`netlify.toml` sets the build command, publish directory (`dist`), Node 22, and the esbuild function bundler. There's one function, which declares its own path and rate limit in code:
 
-Open [http://localhost:5173](http://localhost:5173)
+- `netlify/functions/geocode.mjs` → `/api/geocode` (30 requests/min per IP): cross-street index, then Mapbox, then Nominatim, all bounded to Chicago
 
-## Deployment
-
-### Netlify (recommended)
-
-1. Create a Netlify account and connect your GitHub repository
-2. Set build command: `npm run build`
-3. Set publish directory: `dist`
-4. Add environment variables in Netlify:
-   - `MAPBOX_TOKEN` (optional - Nominatim fallback works)
-   - `OPENROUTER_API_KEY` (optional - narratives work without it)
-
-### Netlify Functions
-
-The app uses two Netlify functions:
-- `/api/getNarrative` - Generates LLM narratives using OpenRouter
-- `/api/geocode` - Server-side geocoding (protects Mapbox key)
-
-Both functions are already implemented in `netlify/functions/`.
-
-## Data Sources
-
-- **Individual Landmarks**: [data.cityofchicago.org/resource/uct4-hrvh.json](https://data.cityofchicago.org/resource/uct4-hrvh.json)
-- **Chicago Historic Resources Survey**: [data.cityofchicago.org/resource/2u8t-236p.json](https://data.cityofchicago.org/resource/2u8t-236p.json)
-- **Architecture Styles**: [Chicago Landmarks Style Details](https://webapps1.chicago.gov/landmarksweb/web/styledetails.htm)
-
-## Architecture
+## How it fits together
 
 ```
-[React App]
-  ├─ Input: cross streets OR GPS
-  ├─ Geocode: Mapbox (fallback to Nominatim)
-  ├─ Query: Socrata within_circle (CORS-open)
-  ├─ Display: Map + list of nearby buildings
-  └─ Tap building → detail card
-       ├─ LLM narrative (via Netlify function)
-       ├─ Verified facts (from city data)
-       └─ Style link (to landmarksweb)
+[React app] ── loads once ──▶ /data/buildings.json, styles.json, landmark-details.json
+  ├─ cross streets ─▶ /api/geocode ─▶ intersection index → Mapbox → Nominatim
+  ├─ GPS
+  ├─ nearby search: local distance filter over buildings.json
+  └─ tap a building
+        ├─ Chicago Landmark? official description + photo + links
+        └─ otherwise: template summary from the facts (no API call)
 ```
 
-## Free Tier Limits
+## Running costs (approximate)
 
-- **Mapbox**: 100,000 requests/month (~3,000 searches/day) - enough for personal use
-- **Gemini Flash**: 1,500 requests/day - enough for moderate usage
-- **Socrata**: No limits - direct API access
+| Service | Free allowance | What this app uses |
+|---|---|---|
+| Netlify | Free plan: 300 credits/month | Static site + 1 small function |
+| Mapbox (optional) | 100,000 requests/month | Place-name searches only |
+| Nominatim | Free; ~1 request/second policy | Fallback for place names |
+| City of Chicago data | Free | Only when rebuilding the data, not at runtime |
 
-## Mobile Testing
+## Tech stack
 
-Test on iOS/Android:
-1. Open in Safari/Chrome
-2. Tap "Share" → "Add to Home Screen"
-3. Launch from home screen for PWA experience
+Vite, React 18, Leaflet / react-leaflet, Netlify Functions (v2).
 
 ## License
 
-MIT
+The code is released under the [MIT License](LICENSE). The building data, descriptions and photos come from the City of Chicago and aren't covered by that license; see the [City's data portal terms](https://www.chicago.gov/city/en/narr/foia/data_disclaimer.html).
